@@ -1,0 +1,1 @@
+default_app_config = "arches_id_generator.apps.ArchesIdGeneratorConfig"
