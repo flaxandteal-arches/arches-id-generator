@@ -25,5 +25,5 @@ def test_fiscal_year_before_april():
     assert out == "AFC001-25/26"
 
 def test_unknown_token_raises():
-    with pytest.raises(ValueError, match="Invalid placeholder in template"):
+    with pytest.raises(ValueError, match="Unknown token"):
         render_format("{nonsense}", 1)
