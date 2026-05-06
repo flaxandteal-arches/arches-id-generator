@@ -1,0 +1,42 @@
+{% extends "views/components/widgets/base.htm" %}
+{% load i18n %}
+
+{% block form %}
+<div class="row widget-wrapper">
+  <div class="form-group">
+    <label class="control-label widget-input-label" data-bind="text: label"></label>
+    <div class="col-xs-12">
+      <input type="text"
+             class="form-control"
+             readonly
+             data-bind="value: displayValue, attr: { placeholder: default_placeholder }">
+    </div>
+  </div>
+</div>
+{% endblock form %}
+
+{% block config_form %}
+<div class="control-label">{% trans "Sequence Key" %}</div>
+<div class="col-xs-12 crud-widget-container">
+  <input type="text" class="form-control" data-bind="textInput: sequence_key">
+  <small class="help-block">
+    Lowercase slug, e.g. <code>monument-number</code>. Counters with the same key share their sequence across nodes.
+  </small>
+</div>
+
+<div class="control-label">{% trans "Template" %}</div>
+<div class="col-xs-12 crud-widget-container">
+  <input type="text" class="form-control" data-bind="textInput: template">
+  <small class="help-block">
+    Tokens: <code>{seq}</code>, <code>{seq:05}</code>,
+    <code>{YYYY}</code>, <code>{YY}</code>,
+    <code>{fiscal_yy}</code>, <code>{fiscal_yy_next}</code>
+  </small>
+</div>
+
+<div class="control-label">{% trans "Placeholder Text" %}</div>
+<div class="col-xs-12 crud-widget-container">
+  <input type="text" class="form-control" data-bind="textInput: default_placeholder">
+  <small class="help-block">Text shown in the field before the ID is assigned.</small>
+</div>
+{% endblock config_form %}

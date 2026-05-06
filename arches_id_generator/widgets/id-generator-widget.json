@@ -1,0 +1,13 @@
+{
+    "name": "id-generator-widget",
+    "component": "views/components/widgets/id-generator-widget",
+    "defaultconfig": {
+        "defaultValue": "",
+        "sequence_key": "default-key",
+        "template": "{seq:05}",
+        "default_placeholder": "ID will be generated on save"
+    },
+    "helptext": "Generates a sequential, monotonic ID at save time from a server-side counter.",
+    "datatype": "string",
+    "widgetid": "3a77cdfa-d13a-4e7b-8278-d269f4cb76e0"
+}
