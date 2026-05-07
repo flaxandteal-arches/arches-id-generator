@@ -5,9 +5,10 @@
         "defaultValue": "",
         "sequence_key": "default-key",
         "template": "{seq:05}",
-        "default_placeholder": "ID will be generated on save"
+        "default_placeholder": "ID will be generated on save",
+        "auto_populate": false
     },
-    "helptext": "Generates a sequential, monotonic ID at save time from a server-side counter.",
+    "helptext": "Generates a sequential, monotonic ID at save time from a server-side counter. Auto-populate (if enabled) only works for top-level cardinality-1 nodegroups — nodes in child nodegroups are not supported and will not auto-populate.",
     "datatype": "string",
     "widgetid": "3a77cdfa-d13a-4e7b-8278-d269f4cb76e0"
 }

@@ -13,6 +13,27 @@ When a resource tile is saved, a `pre_save` signal looks at every node in that t
 
 If the tile already has a value for the node, the signal leaves it alone, so re-saving an existing resource doesn't burn through new IDs.
 
+## Auto-populate on first save
+
+The widget config has an **Auto-populate** checkbox. When enabled, an additional `post_save` signal handler fabricates the widget's tile the first time *any* card on the resource is saved — even if the user never opens the card the widget lives on. This is useful when the SRN card is hidden from data-entry users but the ID still needs to exist before the resource is referenced elsewhere.
+
+Generation is lazy: empty resources that are created and abandoned never trigger a save, so they never consume a counter value. The first tile the user actually saves is what triggers the auto-populated tile and increments the counter.
+
+### Supported nodegroup shapes
+
+Auto-populate only fabricates tiles for **top-level cardinality-1 nodegroups**. The widget itself works on any string node — only the auto-fabrication is restricted.
+
+| Nodegroup shape | `pre_save` populate (widget on its own card) | `post_save` auto-populate (auto-create tile) |
+|---|---|---|
+| Top-level, cardinality 1 | ✅ | ✅ |
+| Top-level, cardinality n (repeating) | ✅ on each manual save | ❌ — can't fabricate without inventing data |
+| Child nodegroup, cardinality 1 | ✅ | ❌ — would require iterating parent tiles; not supported |
+| Child nodegroup, cardinality n | ✅ on each manual save | ❌ |
+
+When auto-populate is enabled on an unsupported shape, the signal logs a warning (`logger.warning` from `arches_id_generator.signals`) and skips that binding. The widget continues to work for manual saves of its own card. To diagnose, search container logs for `arches_id_generator: auto_populate is not supported`.
+
+If you need auto-populate behaviour for a child nodegroup (e.g. one ID per parent tile rather than one per resource), open an issue with the use case — it's deliberately deferred until there's a concrete need, because the counter-scoping semantics are non-obvious (per-resource vs. per-parent-tile).
+
 ## Installation
 
 1. Add the app to your Arches project's requirements / install it:
@@ -134,7 +155,7 @@ Lowering a counter while resources already exist that use those IDs **will** pro
 | Counter model | `arches_id_generator/models.py` (`IdSequence`, table `id_generator_sequence`) |
 | Generator service | `arches_id_generator/services/generator.py` |
 | Template renderer | `arches_id_generator/services/formats.py` |
-| Tile pre_save signal | `arches_id_generator/signals.py` |
+| Tile pre_save and post_save signals | `arches_id_generator/signals.py` |
 | Reset command | `arches_id_generator/management/commands/reset_id_sequence.py` |
 | Widget UUID constant | `arches_id_generator/constants.py` |
 

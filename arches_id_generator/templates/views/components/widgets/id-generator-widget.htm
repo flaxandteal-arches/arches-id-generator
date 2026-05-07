@@ -39,4 +39,17 @@
   <input type="text" class="form-control" data-bind="textInput: default_placeholder">
   <small class="help-block">Text shown in the field before the ID is assigned.</small>
 </div>
+
+<div class="control-label">{% trans "Auto-populate" %}</div>
+<div class="col-xs-12 crud-widget-container">
+  <label class="checkbox-inline">
+    <input type="checkbox" data-bind="checked: auto_populate">
+    {% trans "Generate ID on first save of any card in this resource" %}
+  </label>
+  <small class="help-block">
+    When enabled, the ID is created the first time the user saves any tile on the resource — even if this widget's card is never opened.
+    Only supported on top-level cardinality-1 nodegroups. Has no effect on repeating nodegroups or nodes inside child nodegroups.
+  </small>
+</div>
+
 {% endblock config_form %}
