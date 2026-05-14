@@ -1,22 +1,12 @@
-from django.db import transaction
-from arches_id_generator.models import IdSequence
-from arches_id_generator.services.formats import render_format
+from arches_id_generator.template import render
+from arches_id_generator.utils.validation import validate_key
 
-import re
 
-_VALID_KEY = re.compile(r"^[a-z][a-z0-9-]{0,127}$")
-
-def _validate_key(key):
-    if not _VALID_KEY.fullmatch(key):
-        raise ValueError(
-            "sequence_key must be lowercase letters/digits/hyphens, "
-            "start with a letter, max 128 chars"
-        )
-
-def generate_id(key, template):
-    _validate_key(key)
-    with transaction.atomic():
-        row, _ = IdSequence.objects.select_for_update().get_or_create(key=key)
-        row.last_issued += 1
-        row.save(update_fields=["last_issued", "updated_at"])
-        return render_format(template, row.last_issued)
+def generate_id(sequence_key, template_string, exists_check_fn=None):
+    """Validate the key and render the template into a concrete ID string."""
+    validate_key(sequence_key)
+    return render(
+        template_string,
+        scope_key=sequence_key,
+        exists_check_fn=exists_check_fn,
+    )
