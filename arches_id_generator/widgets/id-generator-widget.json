@@ -6,9 +6,10 @@
         "sequence_key": "default-key",
         "template": "{seq:05}",
         "default_placeholder": "ID will be generated on save",
-        "auto_populate": false
+        "auto_populate": false,
+        "generate_on": "tile_save"
     },
-    "helptext": "Generates a sequential, monotonic ID at save time from a server-side counter. Auto-populate (if enabled) only works for top-level cardinality-1 nodegroups — nodes in child nodegroups are not supported and will not auto-populate.",
+    "helptext": "Generates an ID for the node from a template. By default the ID is stamped when the tile is saved; switch generate_on to 'resource_activation' to defer generation until the resource lifecycle state transitions to active/published. Sequence keys with the same value share a sequence across nodes.",
     "datatype": "string",
     "widgetid": "3a77cdfa-d13a-4e7b-8278-d269f4cb76e0"
 }
