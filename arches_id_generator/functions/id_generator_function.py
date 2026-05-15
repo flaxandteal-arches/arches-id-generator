@@ -20,7 +20,7 @@ GENERATE_ON_RESOURCE_ACTIVATION = "resource_activation"
 
 details = {
     "name": "ID Generator",
-    "functiontype": "node",
+    "type": "lifecyclehandler",
     "description": (
         "Generates IDs for nodes configured with the id-generator widget, "
         "either at tile save or on resource lifecycle activation."
@@ -137,6 +137,7 @@ class IdGeneratorFunction(BaseFunction):
         """Stamp resource_activation-mode bindings when the resource enters
         an 'active' lifecycle state.
         """
+        print("222222222222222222222222", new_state)
         if not new_state:
             return
         if new_state.name.lower() not in {n.lower() for n in _activation_state_names()}:
@@ -152,10 +153,42 @@ class IdGeneratorFunction(BaseFunction):
                 continue
 
             node_id = str(entry.node_id)
-            tiles = Tile.objects.filter(
-                resourceinstance_id=resource_instance.pk,
-                nodegroup_id=entry.node.nodegroup_id,
+            nodegroup = entry.node.nodegroup
+            tiles = list(
+                Tile.objects.filter(
+                    resourceinstance_id=resource_instance.pk,
+                    nodegroup_id=nodegroup.nodegroupid,
+                )
             )
+
+            # No tile was ever saved for this nodegroup (e.g. the resource was
+            # published without the ID card being filled in). Create a blank
+            # top-level tile so the ID can still be stamped, mirroring the
+            # constraints used by the auto_populate path in post_save.
+            if not tiles:
+                if nodegroup.cardinality != "1":
+                    logger.warning(
+                        "Cannot auto-create ID tile for cardinality-n "
+                        "nodegroup on activation (node=%s).",
+                        entry.node_id,
+                    )
+                    continue
+                if nodegroup.parentnodegroup_id is not None:
+                    logger.warning(
+                        "Cannot auto-create ID tile for child nodegroup on "
+                        "activation (node=%s).",
+                        entry.node_id,
+                    )
+                    continue
+                try:
+                    new_tile = Tile().get_blank_tile_from_nodegroup_id(
+                        str(nodegroup.nodegroupid),
+                        resourceid=resource_instance.pk,
+                        parenttile=None,
+                    )
+                except TileCardinalityError:
+                    continue
+                tiles = [new_tile]
 
             for tile in tiles:
                 if tile.data.get(node_id):
