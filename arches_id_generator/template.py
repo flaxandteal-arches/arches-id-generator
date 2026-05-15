@@ -9,6 +9,7 @@ from django.conf import settings
 from arches_id_generator import generators
 from arches_id_generator.utils import allocator
 from arches_id_generator.utils.uniqueness import generate_unique
+from arches_id_generator.utils.validation import validate_key
 
 
 TOKEN_RE = re.compile(r"\{([a-zA-Z_][a-zA-Z0-9_]*)(?::([^}]+))?\}")
@@ -66,6 +67,7 @@ def render(
     today: Optional[date_cls] = None,
 ) -> str:
     """Render `template` into a concrete ID string."""
+    validate_key(scope_key)
     full_context = _date_context(today)
     if context:
         full_context.update(context)

@@ -8,7 +8,7 @@ from arches.app.models.models import CardXNodeXWidget
 from arches.app.models.tile import Tile, TileCardinalityError
 
 from arches_id_generator.constants import WIDGET_ID
-from arches_id_generator.services.generator import generate_id
+from arches_id_generator.template import render
 
 
 logger = logging.getLogger(__name__)
@@ -50,9 +50,9 @@ def _existing_values_for_node(node_id):
 
 
 def _stamp(tile, node_id, sequence_key, template_string):
-    new_value = generate_id(
-        sequence_key,
+    new_value = render(
         template_string,
+        scope_key=sequence_key,
         exists_check_fn=_existing_values_for_node(node_id),
     )
     language = get_language() or settings.LANGUAGE_CODE

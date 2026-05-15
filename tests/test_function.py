@@ -30,7 +30,7 @@ def tile():
 def test_save_stamps_tile_save_binding(tile):
     node_id = uuid4()
     with patch.object(fn, "_bindings_for_nodegroup", return_value=[_binding(node_id)]), \
-         patch.object(fn, "generate_id", return_value="042"):
+         patch.object(fn, "render", return_value="042"):
         fn.IdGeneratorFunction().save(tile, request=None)
     assert tile.data[str(node_id)]["en"]["value"] == "042"
 
@@ -39,7 +39,7 @@ def test_save_skips_resource_activation_binding(tile):
     node_id = uuid4()
     with patch.object(fn, "_bindings_for_nodegroup",
                       return_value=[_binding(node_id, generate_on="resource_activation")]), \
-         patch.object(fn, "generate_id") as g:
+         patch.object(fn, "render") as g:
         fn.IdGeneratorFunction().save(tile, request=None)
     g.assert_not_called()
     assert tile.data == {}
@@ -49,7 +49,7 @@ def test_save_skips_existing_value(tile):
     node_id = uuid4()
     tile.data[str(node_id)] = {"en": {"value": "USER-TYPED", "direction": "ltr"}}
     with patch.object(fn, "_bindings_for_nodegroup", return_value=[_binding(node_id)]), \
-         patch.object(fn, "generate_id") as g:
+         patch.object(fn, "render") as g:
         fn.IdGeneratorFunction().save(tile, request=None)
     g.assert_not_called()
     assert tile.data[str(node_id)]["en"]["value"] == "USER-TYPED"
@@ -59,7 +59,7 @@ def test_save_skips_missing_config(tile):
     node_id = uuid4()
     with patch.object(fn, "_bindings_for_nodegroup",
                       return_value=[_binding(node_id, sequence_key="")]), \
-         patch.object(fn, "generate_id") as g:
+         patch.object(fn, "render") as g:
         fn.IdGeneratorFunction().save(tile, request=None)
     g.assert_not_called()
 
@@ -88,7 +88,7 @@ def test_on_update_lifecycle_stamps_activation_bindings():
 
     with patch.object(fn, "_bindings_for_graph", return_value=[binding]), \
          patch.object(fn.Tile, "objects") as tile_objs, \
-         patch.object(fn, "generate_id", return_value="001"):
+         patch.object(fn, "render", return_value="001"):
         tile_objs.filter.return_value = tiles_qs
         fn.IdGeneratorFunction().on_update_lifecycle_state(
             resource, current_state=None, new_state=new_state
@@ -115,7 +115,7 @@ def test_on_update_lifecycle_respects_user_typed_value():
 
     with patch.object(fn, "_bindings_for_graph", return_value=[binding]), \
          patch.object(fn.Tile, "objects") as tile_objs, \
-         patch.object(fn, "generate_id") as g:
+         patch.object(fn, "render") as g:
         tile_objs.filter.return_value = tiles_qs
         fn.IdGeneratorFunction().on_update_lifecycle_state(
             resource, current_state=None, new_state=new_state
