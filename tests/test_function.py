@@ -124,3 +124,107 @@ def test_on_update_lifecycle_respects_user_typed_value():
     g.assert_not_called()
     tile.save.assert_not_called()
     assert tile.data[str(node_id)]["en"]["value"] == "MANUAL"
+
+
+# --- post_save re-entrancy / auto_populate -----------------------------------
+
+def _auto_binding(nodegroup_id):
+    """Binding that auto-populates a top-level cardinality-1 nodegroup."""
+    entry = MagicMock()
+    entry.node_id = uuid4()
+    entry.config = {"auto_populate": True}
+    entry.node.nodegroup = SimpleNamespace(
+        nodegroupid=nodegroup_id,
+        cardinality="1",
+        parentnodegroup_id=None,
+    )
+    return entry
+
+
+def test_post_save_creates_one_tile_per_auto_populate_nodegroup_under_reentrancy():
+    """Multiple auto_populate bindings on one graph: post_save must create
+    exactly one tile per nodegroup, and the new_tile.save() re-entrancy must
+    terminate (not loop, not duplicate)."""
+    graph_id = uuid4()
+    resource_id = uuid4()
+    ng1, ng2 = uuid4(), uuid4()
+    bindings = [_auto_binding(ng1), _auto_binding(ng2)]
+
+    # (resourceinstance_id, nodegroup_id) pairs that "exist" in the DB.
+    store: set[tuple] = set()
+    created: list = []
+    SAVE_CAP = 50  # guard: if termination is broken, fail loud not hang
+
+    func = fn.IdGeneratorFunction()
+
+    def make_new_tile(nodegroup_id):
+        t = SimpleNamespace(
+            nodegroup_id=nodegroup_id,
+            resourceinstance_id=resource_id,
+            resourceinstance=SimpleNamespace(graph_id=graph_id),
+            data={},
+        )
+
+        def save():
+            assert len(created) < SAVE_CAP, "post_save re-entrancy did not terminate"
+            # Arches persists the row *before* re-running node functions —
+            # the termination argument depends on this ordering.
+            store.add((resource_id, nodegroup_id))
+            created.append(nodegroup_id)
+            func.post_save(t, request=None)
+
+        t.save = save
+        return t
+
+    class FakeTileObjects:
+        def filter(self, **kw):
+            present = (kw["resourceinstance_id"], kw["nodegroup_id"]) in store
+            return SimpleNamespace(exists=lambda: present)
+
+    class FakeTile:
+        objects = FakeTileObjects()
+
+        def get_blank_tile_from_nodegroup_id(self, ngid, resourceid=None, parenttile=None):
+            return make_new_tile(ngid)
+
+    trigger = SimpleNamespace(
+        nodegroup_id=uuid4(),  # some other nodegroup, not ng1/ng2
+        resourceinstance_id=resource_id,
+        resourceinstance=SimpleNamespace(graph_id=graph_id),
+        data={},
+    )
+
+    with patch.object(fn, "_bindings_for_graph", return_value=bindings), \
+         patch.object(fn, "Tile", FakeTile):
+        func.post_save(trigger, request=None)
+
+    # Exactly one tile per distinct auto_populate nodegroup; no duplicates.
+    assert sorted(created) == sorted([ng1, ng2])
+
+    # Idempotent: a second pass (tiles now exist) creates nothing.
+    created.clear()
+    with patch.object(fn, "_bindings_for_graph", return_value=bindings), \
+         patch.object(fn, "Tile", FakeTile):
+        func.post_save(trigger, request=None)
+    assert created == []
+
+
+def test_post_save_ignores_auto_populate_when_generate_on_activation():
+    """auto_populate + generate_on=resource_activation is contradictory; the
+    lifecycle handler creates the tile, so post_save must not."""
+    binding = _auto_binding(uuid4())
+    binding.config["generate_on"] = "resource_activation"
+
+    trigger = SimpleNamespace(
+        nodegroup_id=uuid4(),
+        resourceinstance_id=uuid4(),
+        resourceinstance=SimpleNamespace(graph_id=uuid4()),
+        data={},
+    )
+
+    with patch.object(fn, "_bindings_for_graph", return_value=[binding]), \
+         patch.object(fn, "Tile") as TileCls:
+        fn.IdGeneratorFunction().post_save(trigger, request=None)
+
+    TileCls.assert_not_called()
+    TileCls.objects.filter.assert_not_called()
