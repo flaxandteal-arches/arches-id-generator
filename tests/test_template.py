@@ -11,7 +11,7 @@ from arches_id_generator.template import render, TemplateError
 
 @pytest.fixture
 def patched_allocate():
-    with patch.object(template_mod.allocator, "allocate_or_create", return_value=42) as p:
+    with patch.object(template_mod.allocator, "allocate", return_value=42) as p:
         yield p
 
 

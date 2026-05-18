@@ -43,7 +43,7 @@ def _date_context(today):
 def _emit_seq(spec, scope_key):
     if not scope_key:
         raise TemplateError("template uses {seq} but no scope_key was provided")
-    number = allocator.allocate_or_create(scope_key)
+    number = allocator.allocate(scope_key)
     return format(number, spec) if spec else str(number)
 
 

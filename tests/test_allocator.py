@@ -7,14 +7,21 @@ pytest.importorskip("django")
 from arches_id_generator.utils import allocator
 
 
-@pytest.fixture
-def patched_row():
+def _patched(next_number, created):
+    """Mock IdSequence.objects + transaction so allocate() runs without a DB.
+    Returns the mock row so the test can assert on next_number/save."""
     row = MagicMock()
-    row.next_number = 100
+    row.next_number = next_number
     qs = MagicMock()
-    qs.get.return_value = row
+    qs.get_or_create.return_value = (row, created)
     objs = MagicMock()
     objs.select_for_update.return_value = qs
+    return row, objs
+
+
+@pytest.fixture
+def patched_row():
+    row, objs = _patched(100, created=False)
     with patch.object(allocator.IdSequence, "objects", objs), \
          patch.object(allocator, "transaction") as tx:
         tx.atomic.return_value.__enter__.return_value = None
@@ -35,17 +42,16 @@ def test_allocate_batch(patched_row):
     assert patched_row.next_number == 110
 
 
-def test_allocate_or_create_uses_get_or_create():
-    row = MagicMock()
-    row.next_number = 1
-    qs = MagicMock()
-    qs.get_or_create.return_value = (row, True)
-    objs = MagicMock()
-    objs.select_for_update.return_value = qs
-
+def test_allocate_auto_creates_absent_sequence():
+    # get_or_create returns (row, created=True) for a brand-new key; allocate
+    # must not raise — the sequence is created lazily on first use.
+    row, objs = _patched(1, created=True)
     with patch.object(allocator.IdSequence, "objects", objs), \
          patch.object(allocator, "transaction") as tx:
         tx.atomic.return_value.__enter__.return_value = None
         tx.atomic.return_value.__exit__.return_value = False
-        assert allocator.allocate_or_create("brand-new") == 1
+        assert allocator.allocate("brand-new") == 1
     assert row.next_number == 2
+    objs.select_for_update.return_value.get_or_create.assert_called_once_with(
+        pk="brand-new"
+    )
