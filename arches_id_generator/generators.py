@@ -19,9 +19,16 @@ def generate_uuid4() -> str:
 
 
 def generate_uuid7() -> str:
-    """Time-ordered UUID; falls back to uuid4 if uuid_extensions isn't installed."""
+    """Time-ordered UUID. Never falls back to uuid4: a {uuid7} template is an
+    explicit request for time ordering, so silently issuing unordered uuid4s
+    would violate that guarantee without anyone noticing. `uuid-extensions` is
+    a declared dependency, so this only fails on a broken install — fail loud."""
     if uuid7 is None:
-        return generate_uuid4()
+        raise RuntimeError(
+            "uuid_extensions is not importable, so {uuid7} templates cannot "
+            "produce time-ordered IDs. The 'uuid-extensions' dependency is "
+            "declared in pyproject.toml — reinstall the package to restore it."
+        )
     return str(uuid7())
 
 

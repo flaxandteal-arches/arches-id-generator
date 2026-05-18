@@ -9,7 +9,6 @@ description = "Sequential number id generator widget for Arches"
 readme = "README.md"
 requires-python = ">=3.10"
 license = "AGPL-3.0-or-later"
-license-files = ["LICENSE"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Framework :: Django",
@@ -17,13 +16,20 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
 ]
-dependencies = ["arches>=7.6.0"]
+dependencies = ["arches>=7.6.0", "uuid-extensions>=0.1.4"]
 
 [project.urls]
 Repository = "https://github.com/flaxandteal/arches-id-generator"
 
-[tool.setuptools]
-packages = ["arches_id_generator"]
+[tool.setuptools.packages.find]
+include = ["arches_id_generator*"]
 
 [dependency-groups]
 dev = ["pytest", "pytest-django"]
+
+[tool.setuptools.package-data]
+arches_id_generator = [
+    "templates/**/*",
+    "media/**/*",
+    "widgets/*.json",
+]

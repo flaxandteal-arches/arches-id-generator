@@ -12,8 +12,22 @@ def test_uuid4_shape():
     )
 
 
+@pytest.mark.skipif(
+    generators.uuid7 is None,
+    reason="uuid-extensions not installed; missing-dep behaviour is covered "
+    "by test_uuid7_raises_when_extension_missing",
+)
 def test_uuid7_returns_string():
     assert isinstance(generators.generate_uuid7(), str)
+
+
+def test_uuid7_raises_when_extension_missing(monkeypatch):
+    # No silent uuid4 fallback: a {uuid7} template explicitly asks for time
+    # ordering, so a broken install must fail loudly rather than issue
+    # unordered IDs nobody knows are unordered.
+    monkeypatch.setattr(generators, "uuid7", None)
+    with pytest.raises(RuntimeError, match="time-ordered"):
+        generators.generate_uuid7()
 
 
 def test_random_int_length():
