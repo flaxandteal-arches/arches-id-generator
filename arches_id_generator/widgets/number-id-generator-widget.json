@@ -3,13 +3,13 @@
     "component": "views/components/widgets/number-id-generator-widget",
     "defaultconfig": {
         "defaultValue": null,
-        "sequence_key": "default-key",
+        "sequence_key": "",
         "start_number": 1,
         "default_placeholder": "Number will be generated on save",
         "auto_populate": false,
         "generate_on": "tile_save"
     },
-    "helptext": "Generates a sequential integer for a number node. No template or padding (a number stores 42, not 0042). A brand-new sequence starts at 'Start Number'; once the sequence has been used, Start Number is ignored. Sequence keys with the same value share a counter across nodes.",
+    "helptext": "Generates a sequential integer for a number node. Set a Sequence Key — nothing is generated until you do. No template or padding (a number stores 42, not 0042). A brand-new sequence starts at 'Start Number'; once the sequence has been used, Start Number is ignored. Sequence keys with the same value share a counter across nodes.",
     "datatype": "number",
     "widgetid": "b1c2d3e4-5f6a-4b7c-8d9e-0a1b2c3d4e5f"
 }
