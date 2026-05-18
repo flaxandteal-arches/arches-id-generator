@@ -24,11 +24,22 @@ const viewModel = function(params) {
         }
     };
 
+    // Contradicts resource_activation (lifecycle creates the tile itself):
+    // disable the checkbox and force it off.
+    self.autoPopulateDisabled = ko.computed(() =>
+        ko.unwrap(self.generate_on) === "resource_activation"
+    );
+
     if (ko.isObservable(self.auto_populate)) {
         self.auto_populate.subscribe(markDirty);
     }
     if (ko.isObservable(self.generate_on)) {
         self.generate_on.subscribe(markDirty);
+        self.generate_on.subscribe((value) => {
+            if (value === "resource_activation" && ko.unwrap(self.auto_populate)) {
+                self.auto_populate(false);
+            }
+        });
     }
 };
 

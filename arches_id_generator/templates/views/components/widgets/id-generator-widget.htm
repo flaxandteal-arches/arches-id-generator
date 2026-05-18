@@ -57,13 +57,18 @@
 <div class="control-label">{% trans "Auto-populate" %}</div>
 <div class="col-xs-12 crud-widget-container">
   <label class="checkbox-inline">
-    <input type="checkbox" data-bind="checked: auto_populate">
+    <input type="checkbox" data-bind="checked: auto_populate, disable: autoPopulateDisabled">
     {% trans "Generate ID on first save of any card in this resource" %}
   </label>
   <small class="help-block">
     When enabled, the ID is created the first time the user saves any tile on the resource — even if this widget's card is never opened.
     Only supported on top-level cardinality-1 nodegroups. Has no effect on repeating nodegroups or nodes inside child nodegroups.
   </small>
+  <!-- ko if: autoPopulateDisabled -->
+  <small class="help-block text-muted">
+    {% trans "Not applicable when 'Generate On' is 'Resource activation' — the ID tile is created automatically on activation." %}
+  </small>
+  <!-- /ko -->
 </div>
 
 {% endblock config_form %}
