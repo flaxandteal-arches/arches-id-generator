@@ -1,0 +1,70 @@
+{% extends "views/components/widgets/base.htm" %}
+{% load i18n %}
+
+{% block form %}
+<div class="row widget-wrapper">
+  <div class="form-group">
+    <label class="control-label widget-input-label" data-bind="text: label"></label>
+    <div class="col-xs-12">
+      <input type="text"
+             class="form-control"
+             readonly
+             data-bind="value: displayValue, attr: { placeholder: default_placeholder }">
+    </div>
+  </div>
+</div>
+{% endblock form %}
+
+{% block config_form %}
+<div class="control-label">{% trans "Sequence Key" %}</div>
+<div class="col-xs-12 crud-widget-container">
+  <input type="text" class="form-control" data-bind="textInput: sequence_key">
+  <small class="help-block">
+    Lowercase slug, e.g. <code>monument-number</code>. Counters with the same key share their sequence across nodes.
+  </small>
+</div>
+
+<div class="control-label">{% trans "Start Number" %}</div>
+<div class="col-xs-12 crud-widget-container">
+  <input type="number" step="1" min="1" class="form-control" data-bind="value: start_number">
+  <small class="help-block">
+    {% trans "The first value a brand-new sequence issues (e.g. 3000); minimum 1. Ignored once the sequence has been used — change it via the IdSequence API before any IDs are generated." %}
+  </small>
+</div>
+
+<div class="control-label">{% trans "Generate On" %}</div>
+<div class="col-xs-12 crud-widget-container">
+  <select class="form-control" data-bind="value: generate_on">
+    <option value="tile_save">{% trans "Tile save (default)" %}</option>
+    <option value="resource_activation">{% trans "Resource activation" %}</option>
+  </select>
+  <small class="help-block">
+    Tile save: number is generated whenever the widget's tile is saved. Resource activation: number
+    is generated only when the resource lifecycle transitions to active/published.
+  </small>
+</div>
+
+<div class="control-label">{% trans "Placeholder Text" %}</div>
+<div class="col-xs-12 crud-widget-container">
+  <input type="text" class="form-control" data-bind="textInput: default_placeholder">
+  <small class="help-block">Text shown in the field before the number is assigned.</small>
+</div>
+
+<div class="control-label">{% trans "Auto-populate" %}</div>
+<div class="col-xs-12 crud-widget-container">
+  <label class="checkbox-inline">
+    <input type="checkbox" data-bind="checked: auto_populate, disable: autoPopulateDisabled">
+    {% trans "Generate number on first save of any card in this resource" %}
+  </label>
+  <small class="help-block">
+    When enabled, the number is created the first time the user saves any tile on the resource — even if this widget's card is never opened.
+    Only supported on top-level cardinality-1 nodegroups. Has no effect on repeating nodegroups or nodes inside child nodegroups.
+  </small>
+  <!-- ko if: autoPopulateDisabled -->
+  <small class="help-block text-muted">
+    {% trans "Not applicable when 'Generate On' is 'Resource activation' — the tile is created automatically on activation." %}
+  </small>
+  <!-- /ko -->
+</div>
+
+{% endblock config_form %}

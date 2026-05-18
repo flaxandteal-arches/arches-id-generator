@@ -7,8 +7,8 @@ from arches.app.functions.base import BaseFunction
 from arches.app.models.models import CardXNodeXWidget
 from arches.app.models.tile import Tile, TileCardinalityError
 
-from arches_id_generator.constants import WIDGET_ID
-from arches_id_generator.template import render
+from arches_id_generator.constants import FUNCTION_ID, NUMBER_WIDGET_ID, WIDGET_IDS
+from arches_id_generator.template import next_number, render
 
 
 logger = logging.getLogger(__name__)
@@ -19,6 +19,7 @@ GENERATE_ON_RESOURCE_ACTIVATION = "resource_activation"
 
 
 details = {
+    "functionid": FUNCTION_ID,
     "name": "ID Generator",
     "type": "lifecyclehandler",
     "description": (
@@ -61,16 +62,64 @@ def _stamp(tile, node_id, sequence_key, template_string):
     }
 
 
+def _coerce_start_number(raw):
+    """Widget config can yield None / "" / a string / 0; sequences are
+    1-based, so anything invalid or < 1 falls back to 1."""
+    try:
+        n = int(raw)
+    except (TypeError, ValueError):
+        return 1
+    return n if n >= 1 else 1
+
+
+def _stamp_number(tile, node_id, sequence_key, start_number):
+    """Number variant: store a bare int (no i18n wrapper, no template)."""
+    tile.data[node_id] = next_number(
+        sequence_key, start_number=_coerce_start_number(start_number)
+    )
+
+
+def _is_number_binding(entry):
+    return str(entry.widget_id) == NUMBER_WIDGET_ID
+
+
+def _binding_value_present(tile, node_id, is_number):
+    value = tile.data.get(node_id)
+    # A number node legitimately stores 0 (falsy), so test for presence,
+    # not truthiness, in the numeric case.
+    return value is not None if is_number else bool(value)
+
+
+def _apply_binding(tile, entry):
+    """Stamp the binding into `tile` if empty (string=templated,
+    number=int). Returns True iff a value was stamped."""
+    node_id = str(entry.node_id)
+    sequence_key = entry.config.get("sequence_key")
+    if not sequence_key:
+        return False
+    is_number = _is_number_binding(entry)
+    if _binding_value_present(tile, node_id, is_number):
+        return False
+    if is_number:
+        _stamp_number(tile, node_id, sequence_key, entry.config.get("start_number"))
+        return True
+    template_string = entry.config.get("template")
+    if not template_string:
+        return False
+    _stamp(tile, node_id, sequence_key, template_string)
+    return True
+
+
 def _bindings_for_nodegroup(nodegroup_id):
     return CardXNodeXWidget.objects.filter(
-        widget_id=WIDGET_ID,
+        widget_id__in=WIDGET_IDS,
         node__nodegroup_id=nodegroup_id,
     )
 
 
 def _bindings_for_graph(graph_id):
     return CardXNodeXWidget.objects.filter(
-        widget_id=WIDGET_ID,
+        widget_id__in=WIDGET_IDS,
         node__graph_id=graph_id,
     )
 
@@ -79,29 +128,17 @@ class IdGeneratorFunction(BaseFunction):
     def save(self, tile, request, context=None):
         """Pre-tile-save: stamp values for tile_save-mode bindings."""
         for entry in _bindings_for_nodegroup(tile.nodegroup_id):
-            node_id = str(entry.node_id)
-            sequence_key = entry.config.get("sequence_key")
-            template_string = entry.config.get("template")
             generate_on = entry.config.get("generate_on", GENERATE_ON_TILE_SAVE)
-
-            if not sequence_key or not template_string:
-                continue
             if generate_on != GENERATE_ON_TILE_SAVE:
                 continue
-            if tile.data.get(node_id):
-                continue
-
-            _stamp(tile, node_id, sequence_key, template_string)
+            _apply_binding(tile, entry)
 
     def post_save(self, tile, request, context=None):
-        """Post-tile-save: honour auto_populate by creating a blank top-level
-        tile for any cardinality-1 nodegroup that hasn't yet been saved.
+        """auto_populate: create a blank cardinality-1 tile if none exists.
 
-        new_tile.save() re-enters this method (Arches runs functions on every
-        Tile.save()). It terminates because two guards retire each nodegroup
-        permanently: the nodegroup-self skip below, and the exists() check
-        (Arches persists the row before re-running functions, so the re-entrant
-        call sees it). Removing either reintroduces recursion/duplicates.
+        new_tile.save() re-enters this method; it terminates because the
+        nodegroup-self skip and the exists() guard each retire a nodegroup
+        permanently. Removing either reintroduces recursion/duplicates.
         """
         bindings = _bindings_for_graph(tile.resourceinstance.graph_id)
 
@@ -158,11 +195,12 @@ class IdGeneratorFunction(BaseFunction):
                 continue
 
             sequence_key = entry.config.get("sequence_key")
-            template_string = entry.config.get("template")
-            if not sequence_key or not template_string:
+            if not sequence_key:
+                continue
+            # String variant needs a template; number variant doesn't.
+            if not _is_number_binding(entry) and not entry.config.get("template"):
                 continue
 
-            node_id = str(entry.node_id)
             nodegroup = entry.node.nodegroup
             tiles = list(
                 Tile.objects.filter(
@@ -201,8 +239,6 @@ class IdGeneratorFunction(BaseFunction):
                 tiles = [new_tile]
 
             for tile in tiles:
-                if tile.data.get(node_id):
-                    continue
-                _stamp(tile, node_id, sequence_key, template_string)
-                # Re-enters post_save; terminates via its exists() guard.
-                tile.save()
+                if _apply_binding(tile, entry):
+                    # Re-enters post_save; terminates via its exists() guard.
+                    tile.save()

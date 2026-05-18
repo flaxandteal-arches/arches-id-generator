@@ -40,10 +40,18 @@ def _date_context(today):
     }
 
 
+def next_number(scope_key: str, start_number: Optional[int] = None) -> int:
+    """Next integer in `scope_key`. Single allocation path: `{seq}` formats
+    this; the number widget stores it raw, so a shared key stays in step.
+    `start_number` seeds a new sequence."""
+    validate_key(scope_key)
+    return allocator.allocate(scope_key, start_number=start_number)
+
+
 def _emit_seq(spec, scope_key):
     if not scope_key:
         raise TemplateError("template uses {seq} but no scope_key was provided")
-    number = allocator.allocate(scope_key)
+    number = next_number(scope_key)
     return format(number, spec) if spec else str(number)
 
 

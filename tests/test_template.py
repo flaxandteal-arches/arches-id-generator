@@ -139,3 +139,29 @@ def test_unknown_token_raises():
 def test_no_tokens_raises():
     with pytest.raises(TemplateError, match="no tokens"):
         render("plain-string")
+
+
+# --- next_number (number-widget allocation, shared with {seq}) ---------------
+
+def test_next_number_returns_raw_int(patched_allocate):
+    result = template_mod.next_number("k")
+    assert result == 42
+    assert isinstance(result, int)  # not formatted/stringified
+    patched_allocate.assert_called_once_with("k", start_number=None)
+
+
+def test_next_number_threads_start_number(patched_allocate):
+    template_mod.next_number("k", start_number=3000)
+    patched_allocate.assert_called_once_with("k", start_number=3000)
+
+
+def test_next_number_validates_key(patched_allocate):
+    with pytest.raises(ValueError):
+        template_mod.next_number("Bad Key")
+    patched_allocate.assert_not_called()
+
+
+def test_emit_seq_and_next_number_share_allocation(patched_allocate):
+    # {seq} formats the int next_number returns -> single allocation path.
+    assert render("{seq:04}", scope_key="shared") == "0042"
+    assert template_mod.next_number("shared") == 42

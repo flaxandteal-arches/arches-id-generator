@@ -69,14 +69,18 @@ are always honoured.
    python manage.py migrate arches_id_generator
    ```
 
-5. Register the widget:
+5. Register the string widget (the **number** widget is registered
+   automatically by migration `0003_register_number_widget`):
 
    ```bash
    python manage.py widget register \
        --source arches_apps/arches-id-generator/arches_id_generator/widgets/id-generator-widget.json
    ```
 
-   (Use `--overwrite` after a `defaultconfig` change.)
+   (Use `--overwrite` after a `defaultconfig` change. After editing
+   `number-id-generator-widget.json`'s `defaultconfig`, re-run the migration
+   or `widget register --overwrite` for that file, since the migration is
+   idempotent but only runs once.)
 
 6. Build the frontend:
 
@@ -97,6 +101,15 @@ In the Graph Designer:
    - **Placeholder Text** — what users see before the ID is assigned.
    - **Auto-populate** — see [Auto-populate](#auto-populate).
 4. Save the card.
+
+For a **number**-datatype node, choose **number-id-generator-widget** instead.
+It's the same machinery with a reduced config (no template/padding — a number
+stores `42`, not `0042`):
+
+- **Sequence Key**, **Generate On**, **Placeholder Text**, **Auto-populate** —
+  as above. A sequence key shared with a string `{seq}` template stays in step.
+- **Start Number** — the first value a brand-new sequence issues (e.g. `3000`);
+  minimum `1`. Ignored once the sequence has been used.
 
 The form input is always read-only — the value is server-generated.
 
