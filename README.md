@@ -77,10 +77,12 @@ are always honoured.
        --source arches_apps/arches-id-generator/arches_id_generator/widgets/id-generator-widget.json
    ```
 
-   (Use `--overwrite` after a `defaultconfig` change. After editing
-   `number-id-generator-widget.json`'s `defaultconfig`, re-run the migration
-   or `widget register --overwrite` for that file, since the migration is
-   idempotent but only runs once.)
+   (Use `--overwrite` after a `defaultconfig` change. The migration registers
+   the number widget once at install; Django won't re-apply an applied
+   migration, so after editing `number-id-generator-widget.json`'s
+   `defaultconfig` you must run
+   `widget register --overwrite --source .../number-id-generator-widget.json`
+   — re-running the migration is not a usable path.)
 
 6. Build the frontend:
 
@@ -95,7 +97,7 @@ In the Graph Designer:
 1. Open a `string`-datatype node.
 2. Choose **id-generator-widget** as its widget.
 3. Configure:
-   - **Sequence Key** — slug (lowercase letters / digits / hyphens, starts with a letter, max 128 chars). Nodes sharing a key share a counter — useful for one running number across multiple resource models.
+   - **Sequence Key** — slug (lowercase letters / digits / hyphens, starts with a letter, max 128 chars). **Required and has no default** — until you set it, nothing is generated (this prevents two unconfigured widgets silently sharing a counter). Nodes sharing a key share a counter — useful for one running number across multiple resource models.
    - **Template** — see tokens below.
    - **Generate On** — `Tile save` (default) or `Resource activation`.
    - **Placeholder Text** — what users see before the ID is assigned.
@@ -106,10 +108,15 @@ For a **number**-datatype node, choose **number-id-generator-widget** instead.
 It's the same machinery with a reduced config (no template/padding — a number
 stores `42`, not `0042`):
 
-- **Sequence Key**, **Generate On**, **Placeholder Text**, **Auto-populate** —
-  as above. A sequence key shared with a string `{seq}` template stays in step.
+- **Sequence Key** (required, no default), **Generate On**, **Placeholder
+  Text**, **Auto-populate** — as above. A sequence key shared with a string
+  `{seq}` template stays in step.
 - **Start Number** — the first value a brand-new sequence issues (e.g. `3000`);
-  minimum `1`. Ignored once the sequence has been used.
+  minimum `1`. Only applied when the sequence is *first created*. Caveat: if
+  this key is shared with a string `{seq}` widget and that widget allocates
+  first, the sequence is created at `1` and this **Start Number is silently
+  ignored**. Use a Start Number other than 1 only with a key not shared with
+  a `{seq}` template (or ensure the number widget allocates first).
 
 The form input is always read-only — the value is server-generated.
 
