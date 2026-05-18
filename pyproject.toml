@@ -16,7 +16,7 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
 ]
-dependencies = ["arches>=7.6.0", "uuid-extensions>=0.1.4"]
+dependencies = ["arches>=7.6.0", "uuid7>=0.1.0"]
 
 [project.urls]
 Repository = "https://github.com/flaxandteal/arches-id-generator"
