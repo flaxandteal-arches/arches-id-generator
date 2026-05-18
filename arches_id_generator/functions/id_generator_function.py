@@ -137,7 +137,6 @@ class IdGeneratorFunction(BaseFunction):
         """Stamp resource_activation-mode bindings when the resource enters
         an 'active' lifecycle state.
         """
-        print("222222222222222222222222", new_state)
         if not new_state:
             return
         if new_state.name.lower() not in {n.lower() for n in _activation_state_names()}:
