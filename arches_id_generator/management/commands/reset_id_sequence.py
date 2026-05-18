@@ -7,7 +7,7 @@ from arches_id_generator.models import IdSequence
 class Command(BaseCommand):
     help = (
         "Reset or set the counter for an ID sequence. "
-        "The next generated ID will be (--to) + 1."
+        "The next generated ID will equal (--to)."
     )
 
     def add_arguments(self, parser):
@@ -19,8 +19,8 @@ class Command(BaseCommand):
         parser.add_argument(
             "--to",
             type=int,
-            default=0,
-            help="Value to set last_issued to. Default: 0.",
+            default=1,
+            help="Value to set next_number to. Default: 1 (next ID will be 1).",
         )
         parser.add_argument(
             "--force",
@@ -46,8 +46,8 @@ class Command(BaseCommand):
             width = max(len(r.key) for r in rows)
             for row in rows:
                 self.stdout.write(
-                    f"{row.key.ljust(width)}  last_issued={row.last_issued}  "
-                    f"updated_at={row.updated_at.isoformat()}"
+                    f"{row.key.ljust(width)}  start={row.start_number}  "
+                    f"next={row.next_number}  updated_at={row.updated_at.isoformat()}"
                 )
             return
 
@@ -63,18 +63,18 @@ class Command(BaseCommand):
             except IdSequence.DoesNotExist:
                 raise CommandError(f"No sequence with key={key!r}")
 
-            if target < row.last_issued and not opts["force"]:
+            if target < row.next_number and not opts["force"]:
                 raise CommandError(
-                    f"Refusing to lower {key} from {row.last_issued} to {target} "
+                    f"Refusing to lower {key} from next={row.next_number} to {target} "
                     f"without --force (risk of duplicate IDs against existing tiles)."
                 )
 
-            old = row.last_issued
-            row.last_issued = target
-            row.save(update_fields=["last_issued", "updated_at"])
+            old = row.next_number
+            row.next_number = target
+            row.save(update_fields=["next_number", "updated_at"])
 
         self.stdout.write(
             self.style.SUCCESS(
-                f"{key}: {old} -> {target} (next ID will be {target + 1})"
+                f"{key}: next {old} -> {target} (next ID will be {target})"
             )
         )

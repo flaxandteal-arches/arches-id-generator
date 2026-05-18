@@ -1,3 +1,4 @@
 *.pyc
 *.log
 node_modules
+arches_id_generator.egg-info/

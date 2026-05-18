@@ -1,121 +1,95 @@
-"""
-Unit tests for the assign_id_to_tile pre_save signal.
+"""signals.ensure_function_attached_to_graph: early-exit guards, the
+Function.DoesNotExist branch, and the happy-path auto-attach.
 
-CardXNodeXWidget queries and the generator are mocked so no DB is needed.
-A SimpleNamespace stands in for the Tile instance — the signal only reads
-.nodegroup_id and .data on it.
-"""
-from types import SimpleNamespace
-from unittest.mock import patch, MagicMock
-from uuid import UUID, uuid4
+signals.py imports real Arches models, so this collects only where
+DJANGO_SETTINGS_MODULE is configured."""
+from unittest.mock import MagicMock, patch
+
 import pytest
 
 pytest.importorskip("django")
 
 from arches_id_generator import signals
+from arches_id_generator.constants import FUNCTION_ID, WIDGET_ID
 
 
-def _entry(node_id, sequence_key="key-a", template="{seq:03}"):
-    e = MagicMock()
-    e.node_id = node_id
-    e.config = {"sequence_key": sequence_key, "template": template}
-    return e
+class _DoesNotExist(Exception):
+    pass
 
 
-@pytest.fixture
-def fake_tile():
-    return SimpleNamespace(nodegroup_id=uuid4(), data={})
+def _instance(widget_id=WIDGET_ID, node_id="node-1", graph_id="graph-1"):
+    inst = MagicMock()
+    inst.widget_id = widget_id
+    inst.node_id = node_id
+    inst.node.graph_id = graph_id
+    return inst
 
 
-def test_empty_node_gets_id_in_i18n_shape(fake_tile):
-    node_id = uuid4()
-    entries = [_entry(node_id)]
-
-    with patch.object(signals.CardXNodeXWidget, "objects") as objs, \
-         patch.object(signals, "generate_id", return_value="042") as gen:
-        objs.filter.return_value = entries
-        signals.assign_id_to_tile(sender=None, instance=fake_tile)
-
-    gen.assert_called_once_with("key-a", "{seq:03}")
-    assert fake_tile.data[str(node_id)] == {"en": {"value": "042", "direction": "ltr"}}
+def _patched(get_side_effect=None, function=None):
+    Function = MagicMock()
+    Function.DoesNotExist = _DoesNotExist
+    if get_side_effect is not None:
+        Function.objects.get.side_effect = get_side_effect
+    else:
+        Function.objects.get.return_value = function or MagicMock(name="function")
+    FunctionXGraph = MagicMock()
+    return Function, FunctionXGraph
 
 
-def test_existing_value_is_not_overwritten(fake_tile):
-    node_id = uuid4()
-    fake_tile.data[str(node_id)] = {"en": {"value": "ABC-001", "direction": "ltr"}}
-    entries = [_entry(node_id)]
-
-    with patch.object(signals.CardXNodeXWidget, "objects") as objs, \
-         patch.object(signals, "generate_id") as gen:
-        objs.filter.return_value = entries
-        signals.assign_id_to_tile(sender=None, instance=fake_tile)
-
-    gen.assert_not_called()
-    assert fake_tile.data[str(node_id)] == {"en": {"value": "ABC-001", "direction": "ltr"}}
+def test_ignores_non_idgenerator_widget():
+    Function, FXG = _patched()
+    with patch.object(signals, "Function", Function), \
+         patch.object(signals, "FunctionXGraph", FXG):
+        signals.ensure_function_attached_to_graph(
+            None, _instance(widget_id="some-other-widget-id")
+        )
+    Function.objects.get.assert_not_called()
+    FXG.objects.get_or_create.assert_not_called()
 
 
-def test_node_id_is_stored_as_string_not_uuid(fake_tile):
-    node_id = uuid4()
-    entries = [_entry(node_id)]
-
-    with patch.object(signals.CardXNodeXWidget, "objects") as objs, \
-         patch.object(signals, "generate_id", return_value="X"):
-        objs.filter.return_value = entries
-        signals.assign_id_to_tile(sender=None, instance=fake_tile)
-
-    keys = list(fake_tile.data.keys())
-    assert all(isinstance(k, str) for k in keys), "Tile.data keys must be str (JSON requirement)"
-    assert not any(isinstance(k, UUID) for k in keys)
+def test_ignores_instance_without_node():
+    Function, FXG = _patched()
+    with patch.object(signals, "Function", Function), \
+         patch.object(signals, "FunctionXGraph", FXG):
+        signals.ensure_function_attached_to_graph(None, _instance(node_id=None))
+    Function.objects.get.assert_not_called()
+    FXG.objects.get_or_create.assert_not_called()
 
 
-def test_missing_sequence_key_skipped(fake_tile):
-    node_id = uuid4()
-    entry = MagicMock()
-    entry.node_id = node_id
-    entry.config = {"sequence_key": "", "template": "{seq}"}
-
-    with patch.object(signals.CardXNodeXWidget, "objects") as objs, \
-         patch.object(signals, "generate_id") as gen:
-        objs.filter.return_value = [entry]
-        signals.assign_id_to_tile(sender=None, instance=fake_tile)
-
-    gen.assert_not_called()
-    assert fake_tile.data == {}
+def test_function_not_registered_warns_and_returns():
+    Function, FXG = _patched(get_side_effect=_DoesNotExist)
+    with patch.object(signals, "Function", Function), \
+         patch.object(signals, "FunctionXGraph", FXG), \
+         patch.object(signals, "logger") as log:
+        signals.ensure_function_attached_to_graph(None, _instance())
+    log.warning.assert_called_once()
+    FXG.objects.get_or_create.assert_not_called()
 
 
-def test_missing_template_skipped(fake_tile):
-    node_id = uuid4()
-    entry = MagicMock()
-    entry.node_id = node_id
-    entry.config = {"sequence_key": "key-a", "template": ""}
-
-    with patch.object(signals.CardXNodeXWidget, "objects") as objs, \
-         patch.object(signals, "generate_id") as gen:
-        objs.filter.return_value = [entry]
-        signals.assign_id_to_tile(sender=None, instance=fake_tile)
-
-    gen.assert_not_called()
-
-
-def test_multiple_nodes_get_separate_ids(fake_tile):
-    node_a, node_b = uuid4(), uuid4()
-    entries = [_entry(node_a, "k1", "A-{seq}"), _entry(node_b, "k2", "B-{seq}")]
-
-    issued = iter(["1", "1"])
-    with patch.object(signals.CardXNodeXWidget, "objects") as objs, \
-         patch.object(signals, "generate_id", side_effect=lambda k, t: next(issued)):
-        objs.filter.return_value = entries
-        signals.assign_id_to_tile(sender=None, instance=fake_tile)
-
-    assert fake_tile.data[str(node_a)]["en"]["value"] == "1"
-    assert fake_tile.data[str(node_b)]["en"]["value"] == "1"
+def test_happy_path_attaches_function_to_graph():
+    fn = MagicMock(name="function")
+    Function, FXG = _patched(function=fn)
+    with patch.object(signals, "Function", Function), \
+         patch.object(signals, "FunctionXGraph", FXG):
+        signals.ensure_function_attached_to_graph(
+            None, _instance(graph_id="graph-42")
+        )
+    Function.objects.get.assert_called_once_with(pk=FUNCTION_ID)
+    FXG.objects.get_or_create.assert_called_once_with(
+        function=fn, graph_id="graph-42", defaults={"config": {}}
+    )
 
 
-def test_no_generator_widgets_in_nodegroup_is_noop(fake_tile):
-    with patch.object(signals.CardXNodeXWidget, "objects") as objs, \
-         patch.object(signals, "generate_id") as gen:
-        objs.filter.return_value = []
-        signals.assign_id_to_tile(sender=None, instance=fake_tile)
+def test_widget_id_compared_as_string():
+    # instance.widget_id is typically a UUID; the guard str()s it, so a
+    # UUID-typed value equal to WIDGET_ID must still match.
+    import uuid
 
-    gen.assert_not_called()
-    assert fake_tile.data == {}
+    fn = MagicMock()
+    Function, FXG = _patched(function=fn)
+    with patch.object(signals, "Function", Function), \
+         patch.object(signals, "FunctionXGraph", FXG):
+        signals.ensure_function_attached_to_graph(
+            None, _instance(widget_id=uuid.UUID(WIDGET_ID))
+        )
+    FXG.objects.get_or_create.assert_called_once()

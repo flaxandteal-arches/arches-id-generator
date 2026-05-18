@@ -1,48 +1,53 @@
 # Arches ID Generator
 
-An Arches application that provides a widget for assigning sequential, monotonic IDs at tile save time. IDs come from a server-side counter, so concurrent users cannot end up with duplicates.
+An Arches application that assigns server-generated identifiers to resource nodes,
+using a template string. IDs can be:
 
-## What it does
+- **Sequential**, drawn from an atomic counter shared by any number of nodes (per scope key).
+- **UUID** (uuid4 or time-ordered uuid7).
+- **Random** alphanumeric strings or integers (with retry-on-collision against existing values).
+- **Composite** — any mix of the above, plus date tokens like fiscal year.
 
-When a resource tile is saved, a `pre_save` signal looks at every node in that tile's nodegroup that uses the `id-generator-widget`. For any such node whose value is empty, it:
+Generation can fire at **tile save** (the default — the ID appears the moment
+the user saves the card) or be deferred to **resource lifecycle activation**
+(the ID is stamped when the resource transitions to a published/active state,
+not before).
 
-1. Reads the widget's `sequence_key` and `template` config.
-2. Atomically increments the counter for that key (`SELECT … FOR UPDATE`, then `+1`).
-3. Renders the new value through the template.
-4. Stores it on the tile (in the i18n shape required by the `string` datatype).
+The backend mirrors the `ConceptIdentifierCounter` pattern from arches-lingo,
+so both packages share the same allocation semantics.
 
-If the tile already has a value for the node, the signal leaves it alone, so re-saving an existing resource doesn't burn through new IDs.
+## How it works
 
-## Auto-populate on first save
+The package ships:
 
-The widget config has an **Auto-populate** checkbox. When enabled, an additional `post_save` signal handler fabricates the widget's tile the first time *any* card on the resource is saved — even if the user never opens the card the widget lives on. This is useful when the SRN card is hidden from data-entry users but the ID still needs to exist before the resource is referenced elsewhere.
+- An `IdSequence` model and atomic allocator (`SELECT … FOR UPDATE` + increment).
+- A `secrets`-backed generator module for UUIDs and random values.
+- A template renderer that resolves `{seq}`, `{uuid}`, `{rand:N}`, date tokens, etc.
+- An Arches `BaseFunction` (`IdGeneratorFunction`) that hooks into Arches'
+  tile-save and lifecycle-state-change callbacks.
+- A small `post_save` signal on `CardXNodeXWidget` that **auto-attaches the
+  Function to any graph that uses the widget**, so the widget remains zero-
+  config from the user's point of view.
 
-Generation is lazy: empty resources that are created and abandoned never trigger a save, so they never consume a counter value. The first tile the user actually saves is what triggers the auto-populated tile and increments the counter.
+When the widget is configured `generate_on: tile_save` (default), the Function's
+`save` callback stamps the ID into the tile before persistence. When configured
+`generate_on: resource_activation`, the Function's `on_update_lifecycle_state`
+callback fires only when the resource enters a configured activation state
+(`active` or `published` by default).
 
-### Supported nodegroup shapes
-
-Auto-populate only fabricates tiles for **top-level cardinality-1 nodegroups**. The widget itself works on any string node — only the auto-fabrication is restricted.
-
-| Nodegroup shape | `pre_save` populate (widget on its own card) | `post_save` auto-populate (auto-create tile) |
-|---|---|---|
-| Top-level, cardinality 1 | ✅ | ✅ |
-| Top-level, cardinality n (repeating) | ✅ on each manual save | ❌ — can't fabricate without inventing data |
-| Child nodegroup, cardinality 1 | ✅ | ❌ — would require iterating parent tiles; not supported |
-| Child nodegroup, cardinality n | ✅ on each manual save | ❌ |
-
-When auto-populate is enabled on an unsupported shape, the signal logs a warning (`logger.warning` from `arches_id_generator.signals`) and skips that binding. The widget continues to work for manual saves of its own card. To diagnose, search container logs for `arches_id_generator: auto_populate is not supported`.
-
-If you need auto-populate behaviour for a child nodegroup (e.g. one ID per parent tile rather than one per resource), open an issue with the use case — it's deliberately deferred until there's a concrete need, because the counter-scoping semantics are non-obvious (per-resource vs. per-parent-tile).
+If the tile already has a value (typed by a user or set programmatically),
+the generator leaves it alone. This works in both modes — manual overrides
+are always honoured.
 
 ## Installation
 
-1. Add the app to your Arches project's requirements / install it:
+1. Install the app:
 
    ```bash
    pip install -e arches_apps/arches-id-generator
    ```
 
-2. Add it to `INSTALLED_APPS` in your project settings:
+2. Add it to `INSTALLED_APPS`:
 
    ```python
    INSTALLED_APPS = [
@@ -51,56 +56,92 @@ If you need auto-populate behaviour for a child nodegroup (e.g. one ID per paren
    ]
    ```
 
-3. Run migrations to create the `id_generator_sequence` table:
+3. Wire its URLs (only required if you want the REST seeding API):
+
+   ```python
+   # urls.py
+   urlpatterns += [path("", include("arches_id_generator.urls"))]
+   ```
+
+4. Run migrations to create the sequence table and register the Function:
 
    ```bash
    python manage.py migrate arches_id_generator
    ```
 
-4. Register the widget so it appears in the Graph Designer:
+5. Register the widget:
 
    ```bash
-   python manage.py widget register --source arches_apps/arches-id-generator/arches_id_generator/widgets/id-generator-widget.json
+   python manage.py widget register \
+       --source arches_apps/arches-id-generator/arches_id_generator/widgets/id-generator-widget.json
    ```
 
-   (Use `--overwrite` if you're updating after a `defaultconfig` change.)
+   (Use `--overwrite` after a `defaultconfig` change.)
 
-5. Build the frontend so the widget JS/template are bundled into Arches' static assets:
+6. Build the frontend:
 
    ```bash
-   yarn build_development   # or your project's equivalent
+   yarn build_development
    ```
 
-## Using the widget
+## Configuring the widget
 
 In the Graph Designer:
 
 1. Open a `string`-datatype node.
 2. Choose **id-generator-widget** as its widget.
 3. Configure:
-   - **Sequence Key** — a slug (lowercase letters, digits, hyphens; must start with a letter; max 128 chars). Nodes that share the same key share the same counter, which is useful when you want one running number across multiple resource models.
-   - **Template** — the format string (see tokens below).
-   - **Placeholder Text** — what users see in the read-only field before the ID is assigned.
-4. Save the card. New resources will receive an ID on first save.
+   - **Sequence Key** — slug (lowercase letters / digits / hyphens, starts with a letter, max 128 chars). Nodes sharing a key share a counter — useful for one running number across multiple resource models.
+   - **Template** — see tokens below.
+   - **Generate On** — `Tile save` (default) or `Resource activation`.
+   - **Placeholder Text** — what users see before the ID is assigned.
+   - **Auto-populate** — see [Auto-populate](#auto-populate).
+4. Save the card.
 
-The form input is read-only — IDs are server-generated, never user-typed.
+The form input is always read-only — the value is server-generated.
+
+The first time you save a `CardXNodeXWidget` row for this widget on a graph,
+a signal ensures `IdGeneratorFunction` is attached to that graph. No manual
+function-binding step required.
+
+Different nodes on the same graph may use **different sequence keys, templates,
+and trigger modes** — every binding is processed independently.
 
 ## Template tokens
 
-The template is a Python `str.format`-style string. The following tokens are allowed:
-
 | Token | Meaning | Example output |
 |---|---|---|
-| `{seq}` | The next sequence number, no padding | `42` |
-| `{seq:0N}` | The next sequence number, zero-padded to N digits | `{seq:05}` → `00042` |
-| `{YYYY}` | Current calendar year, 4 digits | `2026` |
-| `{YY}` | Current calendar year, last 2 digits | `26` |
-| `{fiscal_yy}` | Fiscal year (April–March), last 2 digits | `26` (for any date 2026-04 through 2027-03) |
-| `{fiscal_yy_next}` | Fiscal year + 1, last 2 digits — useful for `25/26` style spans | `27` |
+| `{seq}` | Next sequence number, no padding | `42` |
+| `{seq:0N}` | Next sequence number, zero-padded to N digits — `{seq:05}` → `00042` | `00042` |
+| `{uuid}` | uuid4 | `3f0c…` |
+| `{uuid7}` | Time-ordered uuid7 (falls back to uuid4 without `uuid_extensions`) | `0192c…` |
+| `{rand:N}` | Random alphanumeric string of length N (default alphabet excludes `0`, `O`, `1`, `I`, `L`) | `K7Q9XB` |
+| `{randint:N}` | Random integer with N digits | `47391` |
+| `{YYYY}` / `{YY}` | Calendar year, 4 or 2 digits | `2026` / `26` |
+| `{fiscal_yy}` | Fiscal year (April–March by default), 2 digits | `26` (April 2026 through March 2027) |
+| `{fiscal_yy_next}` | Fiscal year + 1, 2 digits (for `25/26`-style spans) | `27` |
 
-The fiscal year start is **April** (`_FISCAL_YEAR_START_MONTH = 4` in `services/formats.py`); change it there if you need a different fiscal calendar.
+A template with no tokens is rejected — nothing would be generated.
 
-Anything outside `{...}` tokens is treated as literal text. Attribute access (`{seq.__class__}`), indexing (`{seq[0]}`), and `!r` / `!s` conversions are all rejected.
+### Uniqueness
+
+For random/non-deterministic templates (`{rand:N}`, `{randint:N}`), the renderer
+wraps the whole template in a retry loop: if the **full rendered ID** already
+exists for the node, it rerolls. Templates containing `{seq}`, `{uuid}`, or
+`{uuid7}` skip this check — sequence allocation and UUIDs are already
+collision-free, and running the check on them would be wasted work (and prone
+to false positives against fragments that appear elsewhere in the column).
+
+If retries are exhausted (default 10), a `CollisionError` is raised — usually
+a sign the random fragment is too short for the volume of data, and the
+template should be widened.
+
+### Configuration
+
+| Setting | Default | Purpose |
+|---|---|---|
+| `ARCHES_ID_GENERATOR_FISCAL_YEAR_START_MONTH` | `4` | Month a fiscal year begins (1–12). |
+| `ARCHES_ID_GENERATOR_ACTIVATION_STATE_NAMES` | `["active", "published"]` | Lifecycle state names that trigger `resource_activation` generation. Case-insensitive. |
 
 ### Template examples
 
@@ -110,36 +151,89 @@ Anything outside `{...}` tokens is treated as literal text. Attribute access (`{
 | `MN-{seq:06}` | `MN-000042` |
 | `{YYYY}-{seq:04}` | `2026-0042` |
 | `{fiscal_yy}/{fiscal_yy_next}-{seq:03}` | `26/27-042` |
+| `{uuid}` | `3f0c87a4-2eef-4c0e-8c5e-...` |
+| `ART-{rand:6}` | `ART-K7Q9XB` |
+| `{seq:04}-{rand:4}` | `0042-K7Q9` |
+
+## Generate On modes
+
+### Tile save (default)
+
+When a tile is saved, the Function's `save` callback iterates over every
+`CardXNodeXWidget` row for that nodegroup whose widget is the id-generator.
+For each binding in `tile_save` mode with an empty value, it renders the
+template and stamps the result in.
+
+### Resource activation
+
+The Function's `on_update_lifecycle_state` callback fires when the resource's
+lifecycle state changes. If the new state's name is in the configured
+activation list (default: `active`, `published`), every binding on the graph
+in `resource_activation` mode has its template rendered and stamped into the
+relevant tile(s), unless they already have a value.
+
+Drafts that are abandoned therefore never burn an ID, which is the main
+reason to choose this mode over tile-save.
+
+## Auto-populate
+
+The widget config has an **Auto-populate** checkbox (orthogonal to the
+generate-on choice). When enabled, the Function's `post_save` callback
+fabricates the widget's tile the first time *any* card on the resource is
+saved — even if the user never opens the card the widget lives on. This is
+useful when the SRN card is hidden from data-entry users but the ID still
+needs to exist before the resource is referenced elsewhere.
+
+Auto-populate only fabricates tiles for **top-level cardinality-1 nodegroups**.
+On unsupported shapes it logs a warning and skips the binding; the widget
+continues to work for manual saves of the card.
+
+| Nodegroup shape | Save populate (widget on its own card) | Auto-populate (fabricate tile) |
+|---|---|---|
+| Top-level, cardinality 1 | ✅ | ✅ |
+| Top-level, cardinality n | ✅ on each manual save | ❌ |
+| Child nodegroup, cardinality 1 | ✅ | ❌ |
+| Child nodegroup, cardinality n | ✅ on each manual save | ❌ |
+
+## REST API
+
+If you've wired `arches_id_generator.urls`, the package exposes:
+
+- `GET /api/id-sequence/<key>` — current state of a sequence.
+- `POST /api/id-sequence/<key>` with body `{"start_number": N}` — create or
+  seed a sequence. **Refuses to edit a sequence that has already been used**
+  (`start_number != next_number`).
+
+Endpoint requires authentication (`LoginRequiredMixin`). Subclass
+`IdSequenceView` for stricter permissions.
 
 ## Resetting a sequence
 
-Use the bundled management command instead of editing the database directly. It takes a row-level lock so it's safe to run against a live system.
-
 ```bash
-# List every sequence and its current counter
+# List every sequence and its current state
 python manage.py reset_id_sequence --list
 
-# Reset to 0 — the next ID will be 1
+# Set next_number to 1 — the next ID will be 1
 python manage.py reset_id_sequence monument-number
 
-# Skip the counter forward (e.g. to leave a gap, or migrate from another system)
+# Skip the counter forward
 python manage.py reset_id_sequence monument-number --to 5000
 
-# Lower the counter — refused unless --force is passed,
-# because it can produce duplicate IDs against existing tiles
+# Lower the counter — refused unless --force is passed
 python manage.py reset_id_sequence monument-number --to 100 --force
 ```
 
 Arguments:
 
 - `key` — the `sequence_key` to update. Required unless `--list` is passed.
-- `--to N` — set `last_issued` to `N`. The next generated ID will be `N + 1`. Defaults to `0`.
-- `--force` — allow lowering the counter below its current value. Without this flag, the command refuses to lower the counter, since the next save would hand out a number an existing resource already has.
+- `--to N` — set `next_number` to `N`. The next generated ID will be `N`. Defaults to `1`.
+- `--force` — allow lowering the counter below its current value.
 - `--list` — print all sequences and exit.
 
 ### Safety note
 
-Lowering a counter while resources already exist that use those IDs **will** produce duplicates. The widget does not enforce uniqueness across resources. Reasonable times to lower a counter:
+Lowering a counter while resources already exist that use those IDs **will**
+produce duplicates. Reasonable times to lower a counter:
 
 - Fresh / dev / staging environments.
 - After deleting all resources that consumed the higher numbers.
@@ -152,12 +246,18 @@ Lowering a counter while resources already exist that use those IDs **will** pro
 | Widget definition (JSON) | `arches_id_generator/widgets/id-generator-widget.json` |
 | Widget Knockout viewmodel | `arches_id_generator/media/js/views/components/widgets/id-generator-widget.js` |
 | Widget template | `arches_id_generator/templates/views/components/widgets/id-generator-widget.htm` |
-| Counter model | `arches_id_generator/models.py` (`IdSequence`, table `id_generator_sequence`) |
-| Generator service | `arches_id_generator/services/generator.py` |
-| Template renderer | `arches_id_generator/services/formats.py` |
-| Tile pre_save and post_save signals | `arches_id_generator/signals.py` |
+| Sequence model | `arches_id_generator/models.py` (`IdSequence`, table `id_generator_sequence`) |
+| Atomic allocator | `arches_id_generator/utils/allocator.py` |
+| Stateless generators (UUID / random) | `arches_id_generator/generators.py` |
+| Uniqueness wrapper | `arches_id_generator/utils/uniqueness.py` |
+| Template renderer | `arches_id_generator/template.py` |
+| Key validation | `arches_id_generator/utils/validation.py` |
+| Generator service (validation + render) | `arches_id_generator/services/generator.py` |
+| Arches Function | `arches_id_generator/functions/id_generator_function.py` |
+| Auto-attach signal | `arches_id_generator/signals.py` |
+| REST API | `arches_id_generator/views/api.py`, `arches_id_generator/urls.py` |
 | Reset command | `arches_id_generator/management/commands/reset_id_sequence.py` |
-| Widget UUID constant | `arches_id_generator/constants.py` |
+| Constants (widget id, function id) | `arches_id_generator/constants.py` |
 
 ## Tests
 
