@@ -228,3 +228,69 @@ def test_post_save_ignores_auto_populate_when_generate_on_activation():
 
     TileCls.assert_not_called()
     TileCls.objects.filter.assert_not_called()
+
+
+# --- number-datatype variant -------------------------------------------------
+
+from arches_id_generator.constants import NUMBER_WIDGET_ID, WIDGET_ID  # noqa: E402
+
+
+def _num_binding(node_id, **cfg):
+    entry = MagicMock()
+    entry.node_id = node_id
+    entry.widget_id = NUMBER_WIDGET_ID
+    config = {"sequence_key": "k", "start_number": 1}
+    config.update(cfg)
+    entry.config = config
+    return entry
+
+
+def test_is_number_binding_discriminates_by_widget_id():
+    assert fn._is_number_binding(_num_binding(uuid4())) is True
+    str_entry = MagicMock(widget_id=WIDGET_ID)
+    assert fn._is_number_binding(str_entry) is False
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [(None, 1), ("", 1), ("abc", 1), (0, 1), (-5, 1), (1, 1),
+     (3000, 3000), ("3000", 3000)],
+)
+def test_coerce_start_number(raw, expected):
+    assert fn._coerce_start_number(raw) == expected
+
+
+def test_apply_binding_number_writes_bare_int():
+    node_id = uuid4()
+    tile = SimpleNamespace(data={})
+    entry = _num_binding(node_id, start_number=3000)
+    with patch.object(fn, "next_number", return_value=3000) as nn:
+        assert fn._apply_binding(tile, entry) is True
+    nn.assert_called_once_with("k", start_number=3000)
+    # bare int, not the string datatype's i18n dict
+    assert tile.data[str(node_id)] == 3000
+
+
+def test_apply_binding_number_skips_when_value_present_including_zero():
+    node_id = uuid4()
+    tile = SimpleNamespace(data={str(node_id): 0})  # 0 is a real value
+    with patch.object(fn, "next_number") as nn:
+        assert fn._apply_binding(tile, _num_binding(node_id)) is False
+    nn.assert_not_called()
+
+
+def test_apply_binding_number_requires_sequence_key():
+    tile = SimpleNamespace(data={})
+    entry = _num_binding(uuid4(), sequence_key="")
+    with patch.object(fn, "next_number") as nn:
+        assert fn._apply_binding(tile, entry) is False
+    nn.assert_not_called()
+
+
+def test_apply_binding_string_path_unaffected():
+    node_id = uuid4()
+    tile = SimpleNamespace(data={})
+    entry = _binding(node_id)  # string binding (template set)
+    with patch.object(fn, "_stamp") as stamp:
+        assert fn._apply_binding(tile, entry) is True
+    stamp.assert_called_once()

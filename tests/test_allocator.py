@@ -53,5 +53,20 @@ def test_allocate_auto_creates_absent_sequence():
         assert allocator.allocate("brand-new") == 1
     assert row.next_number == 2
     objs.select_for_update.return_value.get_or_create.assert_called_once_with(
-        pk="brand-new"
+        pk="brand-new", defaults={}
+    )
+
+
+def test_allocate_seeds_start_number_on_create():
+    # start_number is passed as get_or_create defaults so a brand-new
+    # sequence begins there instead of the model default.
+    row, objs = _patched(3000, created=True)
+    with patch.object(allocator.IdSequence, "objects", objs), \
+         patch.object(allocator, "transaction") as tx:
+        tx.atomic.return_value.__enter__.return_value = None
+        tx.atomic.return_value.__exit__.return_value = False
+        assert allocator.allocate("seeded", start_number=3000) == 3000
+    assert row.next_number == 3001
+    objs.select_for_update.return_value.get_or_create.assert_called_once_with(
+        pk="seeded", defaults={"start_number": 3000, "next_number": 3000}
     )

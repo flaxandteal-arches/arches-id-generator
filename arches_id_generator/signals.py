@@ -11,7 +11,7 @@ from arches.app.models.models import (
     FunctionXGraph,
 )
 
-from arches_id_generator.constants import FUNCTION_ID, WIDGET_ID
+from arches_id_generator.constants import FUNCTION_ID, WIDGET_IDS
 
 
 logger = logging.getLogger(__name__)
@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 @receiver(post_save, sender=CardXNodeXWidget)
 def ensure_function_attached_to_graph(sender, instance, **kwargs):
-    if str(instance.widget_id) != WIDGET_ID:
+    if str(instance.widget_id) not in WIDGET_IDS:
         return
     if not instance.node_id:
         return

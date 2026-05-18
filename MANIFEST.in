@@ -1,0 +1,9 @@
+# Wheel inclusion is governed by [tool.setuptools.package-data] in
+# pyproject.toml; this file governs sdist inclusion. Migration
+# 0003_register_number_widget reads widgets/*.json at migrate time, so
+# these data files must be in the sdist too or an sdist-based install
+# crashes on migrate.
+graft arches_id_generator/widgets
+graft arches_id_generator/templates
+graft arches_id_generator/media
+global-exclude *.pyc __pycache__/*

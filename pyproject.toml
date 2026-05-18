@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "arches-id-generator"
-version = "0.1.0"
+version = "0.1.1"
 description = "Sequential number id generator widget for Arches"
 readme = "README.md"
 requires-python = ">=3.10"
