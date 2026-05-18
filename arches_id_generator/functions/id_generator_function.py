@@ -96,11 +96,21 @@ class IdGeneratorFunction(BaseFunction):
     def post_save(self, tile, request, context=None):
         """Post-tile-save: honour auto_populate by creating a blank top-level
         tile for any cardinality-1 nodegroup that hasn't yet been saved.
+
+        new_tile.save() re-enters this method (Arches runs functions on every
+        Tile.save()). It terminates because two guards retire each nodegroup
+        permanently: the nodegroup-self skip below, and the exists() check
+        (Arches persists the row before re-running functions, so the re-entrant
+        call sees it). Removing either reintroduces recursion/duplicates.
         """
         bindings = _bindings_for_graph(tile.resourceinstance.graph_id)
 
         for entry in bindings:
             if entry.config.get("auto_populate") is not True:
+                continue
+            # Contradicts resource_activation (lifecycle handler creates the
+            # tile itself); UI blocks it, ignore raw/legacy config defensively.
+            if entry.config.get("generate_on") == GENERATE_ON_RESOURCE_ACTIVATION:
                 continue
 
             nodegroup = entry.node.nodegroup
@@ -127,6 +137,7 @@ class IdGeneratorFunction(BaseFunction):
                     resourceid=tile.resourceinstance_id,
                     parenttile=None,
                 )
+                # Re-enters post_save; terminates per the docstring.
                 new_tile.save()
             except TileCardinalityError:
                 pass
@@ -193,4 +204,5 @@ class IdGeneratorFunction(BaseFunction):
                 if tile.data.get(node_id):
                     continue
                 _stamp(tile, node_id, sequence_key, template_string)
+                # Re-enters post_save; terminates via its exists() guard.
                 tile.save()
