@@ -36,6 +36,14 @@ def _patched(get_side_effect=None, function=None):
     return Function, FunctionXGraph
 
 
+def _run_on_commit():
+    """transaction.on_commit replacement that fires the callback immediately,
+    so tests can assert on the deferred attach without a real DB transaction."""
+    transaction = MagicMock()
+    transaction.on_commit.side_effect = lambda fn: fn()
+    return transaction
+
+
 def test_ignores_non_idgenerator_widget():
     Function, FXG = _patched()
     with patch.object(signals, "Function", Function), \
@@ -70,7 +78,8 @@ def test_happy_path_attaches_function_to_graph():
     fn = MagicMock(name="function")
     Function, FXG = _patched(function=fn)
     with patch.object(signals, "Function", Function), \
-         patch.object(signals, "FunctionXGraph", FXG):
+         patch.object(signals, "FunctionXGraph", FXG), \
+         patch.object(signals, "transaction", _run_on_commit()):
         signals.ensure_function_attached_to_graph(
             None, _instance(graph_id="graph-42")
         )
@@ -78,6 +87,21 @@ def test_happy_path_attaches_function_to_graph():
     FXG.objects.get_or_create.assert_called_once_with(
         function=fn, graph_id="graph-42", defaults={"config": {}}
     )
+
+
+def test_attach_is_deferred_until_commit():
+    # The get_or_create must run via transaction.on_commit (not synchronously),
+    # so it cannot collide with arches' own FunctionXGraph insert during a
+    # graph promote/restore that re-saves CardXNodeXWidget rows mid-transaction.
+    fn = MagicMock(name="function")
+    Function, FXG = _patched(function=fn)
+    transaction = MagicMock()  # on_commit records but does NOT call the callback
+    with patch.object(signals, "Function", Function), \
+         patch.object(signals, "FunctionXGraph", FXG), \
+         patch.object(signals, "transaction", transaction):
+        signals.ensure_function_attached_to_graph(None, _instance())
+    transaction.on_commit.assert_called_once()
+    FXG.objects.get_or_create.assert_not_called()  # deferred, not run yet
 
 
 def test_widget_id_compared_as_string():
@@ -88,7 +112,8 @@ def test_widget_id_compared_as_string():
     fn = MagicMock()
     Function, FXG = _patched(function=fn)
     with patch.object(signals, "Function", Function), \
-         patch.object(signals, "FunctionXGraph", FXG):
+         patch.object(signals, "FunctionXGraph", FXG), \
+         patch.object(signals, "transaction", _run_on_commit()):
         signals.ensure_function_attached_to_graph(
             None, _instance(widget_id=uuid.UUID(WIDGET_ID))
         )
