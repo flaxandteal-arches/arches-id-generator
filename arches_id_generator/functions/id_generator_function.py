@@ -141,7 +141,6 @@ class IdGeneratorFunction(BaseFunction):
         permanently. Removing either reintroduces recursion/duplicates.
         """
         bindings = _bindings_for_graph(tile.resourceinstance.graph_id)
-
         for entry in bindings:
             if entry.config.get("auto_populate") is not True:
                 continue
@@ -175,7 +174,7 @@ class IdGeneratorFunction(BaseFunction):
                     parenttile=None,
                 )
                 # Re-enters post_save; terminates per the docstring.
-                new_tile.save()
+                new_tile.save(request=request, context=context)
             except TileCardinalityError:
                 pass
 
@@ -241,4 +240,4 @@ class IdGeneratorFunction(BaseFunction):
             for tile in tiles:
                 if _apply_binding(tile, entry):
                     # Re-enters post_save; terminates via its exists() guard.
-                    tile.save()
+                    tile.save(request=request, context=context)

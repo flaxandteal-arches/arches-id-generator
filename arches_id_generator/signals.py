@@ -2,6 +2,7 @@
 
 import logging
 
+from django.db import transaction
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 
@@ -36,8 +37,11 @@ def ensure_function_attached_to_graph(sender, instance, **kwargs):
         )
         return
 
-    FunctionXGraph.objects.get_or_create(
-        function=function,
-        graph_id=graph_id,
-        defaults={"config": {}},
-    )
+    def attach():
+        FunctionXGraph.objects.get_or_create(
+            function=function,
+            graph_id=graph_id,
+            defaults={"config": {}},
+        )
+
+    transaction.on_commit(attach)

@@ -9,7 +9,7 @@ def forward(apps, schema_editor):
         functionid=FUNCTION_ID,
         defaults={
             "name": "ID Generator",
-            "functiontype": "node",
+            "functiontype": "lifecyclehandler",
             "description": (
                 "Generates IDs for nodes configured with the id-generator widget, "
                 "either at tile save or on resource lifecycle activation."
